@@ -1,104 +1,59 @@
-// Copyright (c) 2022, Danche Nganga. All rights reserved. Use of this source code
-// is governed by a BSD-style license that can be found in the LICENSE file.
 import 'dart:io';
-import 'package:logger/logger.dart';
 import 'package:pubspec/pubspec.dart';
 import 'package:yaml_writer/yaml_writer.dart';
 
 main(List<String> args) async {
-  var logger = Logger(
-    filter: NewFilter(), // log in release and debug mode
-    printer: PrettyPrinter(
-        methodCount: 0, // number of method calls to be displayed
-        errorMethodCount: 8, // number of method calls if stacktrace is provided
-        colors: true, // Colorful log messages
-        printEmojis: true, // Print an emoji for each log message
-        printTime: true // Should each log print contain a timestamp
-        ), // Use the PrettyPrinter to format and print log
-    output: null, // Use the default LogOutput (-> send everything to console)
-  );
-
-  logger.w("Starting..");
   try {
-    String path = '';
-    if (args.isEmpty) {
-      path = Directory.current.path;
-    } else {
-      path = args[0];
-    }
-
+    String path = args.isEmpty ? Directory.current.path : args[0];
     Directory myDirectory = Directory(path);
+
+    // Load the pubspec.yaml file
     var pubSpec = await PubSpec.load(myDirectory);
 
-    Map<String, DependencyReference> dependencies = pubSpec.dependencies;
-    Map<String, DependencyReference> devDependencies = pubSpec.devDependencies;
-    Map<String, DependencyReference> dependencyOverrides =
-        pubSpec.dependencyOverrides;
+    // Sort dependencies, devDependencies, and dependencyOverrides
+    var sortedDependencies = _sortDependencies(pubSpec.dependencies);
+    var sortedDevDependencies = _sortDependencies(pubSpec.devDependencies);
+    var sortedDependencyOverrides = _sortDependencies(pubSpec.dependencyOverrides);
 
-    var sortedDependencies = _sortDependencies(dependencies);
-    logger.i("<<<--- sorted dependencies.");
-    var sortedDevDependencies = _sortDependencies(devDependencies);
-    logger.i("<<<--- sorted dev dependencies.");
-    var sortedDependencyOverrides = _sortDependencies(dependencyOverrides);
-    logger.i("<<<---- sorted dependency overrides.");
-
+    // Create a new PubSpec with sorted dependencies
     var newPubSpec = pubSpec.copy(
       dependencies: sortedDependencies,
-      dependencyOverrides: sortedDependencyOverrides,
       devDependencies: sortedDevDependencies,
+      dependencyOverrides: sortedDependencyOverrides,
     );
 
+    // Write the sorted dependencies back to pubspec.yaml
     var yamlWriter = YamlWriter(allowUnquotedStrings: true);
     var yamlDoc = yamlWriter.write(newPubSpec.toJson());
 
+    // Format the YAML document (without adding a blank line at the top)
     var formattedYamlDoc = _formatYamlWithSpaces(yamlDoc);
 
+    // Save the formatted YAML to the file
     File file = File("${myDirectory.path}/pubspec.yaml");
     await file.writeAsString(formattedYamlDoc);
-
-    logger.i("Saved the changes");
-    logger.i(
-        "Done---< please star and like the package. https://github.com/Genialngash/pubspec-dependency-sorter >");
   } catch (e) {
-    logger.e(e);
+    print('Error: $e'); // Simplified error handling
   }
 }
 
 Map<String, DependencyReference> _sortDependencies(
     Map<String, DependencyReference> dependencies) {
-  var sortedDependencies = dependencies.keys.toList();
-  sortedDependencies.sort((a, b) {
-    return a.toString().compareTo(b.toString());
-  });
-
-  Map<String, DependencyReference> sortDependenciesByKey = {};
-  for (var key in sortedDependencies) {
-    sortDependenciesByKey[key] = dependencies[key]!;
-  }
-  return sortDependenciesByKey;
+  var sortedKeys = dependencies.keys.toList()..sort();
+  return Map.fromEntries(sortedKeys.map((key) => MapEntry(key, dependencies[key]!)));
 }
 
 String _formatYamlWithSpaces(String yamlDoc) {
-  // Split the YAML document into lines
   var lines = yamlDoc.split('\n');
-  // Initialize a list to hold the formatted lines
   var formattedLines = <String>[];
-  // Add a blank line after each top-level key
-  for (var line in lines) {
-    // Check if the line contains a top-level key (starts without spaces)
-    if (line.isNotEmpty && !line.startsWith(' ')) {
-      formattedLines.add(''); // Add a blank line
-    }
 
+  for (var line in lines) {
+    // Add a blank line before top-level keys (except the first one)
+    if (line.isNotEmpty && !line.startsWith(' ') && formattedLines.isNotEmpty) {
+      formattedLines.add('');
+    }
     formattedLines.add(line);
   }
-  // Join the formatted lines back into a single string
-  return formattedLines.join('\n');
-}
 
-class NewFilter extends LogFilter {
-  @override
-  bool shouldLog(LogEvent event) {
-    return true;
-  }
+  return formattedLines.join('\n');
 }
